@@ -41,4 +41,15 @@ assert_eq(#annai._read_history(), 0, "history empty after clear")
 -- 空履歴のとき top は空配列
 assert_eq(#annai._top_answers({}, 5), 0, "empty history => empty top")
 
-print("OK: annai history/stats tests passed")
+-- 既定プロンプト: no-match ガイドと few-shot 例（正例 + 反例）が入っていること
+local function has(s, sub)
+  return s:find(sub, 1, true) ~= nil
+end
+local p = annai.config.build_prompt("置換したい", "Space ff = ファイル名で検索", "Space")
+assert(has(p, "この設定には無い"), "prompt must instruct the no-match fallback")
+assert(has(p, "# 例"), "prompt must include few-shot examples")
+assert(has(p, "回答: この設定には無い"), "prompt must include a no-match example")
+assert(has(p, "Space ff = ファイル名で検索"), "prompt must embed the keymap list")
+assert(has(p, "置換したい"), "prompt must embed the question")
+
+print("OK: annai history/stats/prompt tests passed")
