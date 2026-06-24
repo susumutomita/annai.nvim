@@ -6,6 +6,9 @@
 --
 -- バックエンド: afm（Apple Foundation Models / オンデバイス）を優先し、
 --               無ければ Ollama（localhost）にフォールバックする。
+--
+-- 履歴（任意・既定 OFF）: よく聞く操作を端末内に記録し、:Annai stats で
+--                         「指がまだ覚えていないキー」を炙り出して定着を促す。
 
 local M = {}
 
@@ -26,8 +29,15 @@ M.config = {
   },
 
   keymap = "<leader>?", -- 既定キー。false で無効化して自分で割り当ててもよい
-  command = "Annai", -- ユーザコマンド名（plugin/annai.lua が登録）
   input_prompt = "やりたいこと: ",
+
+  -- 履歴（よく聞く操作 = あなたの blind spot を炙り出す）。プライバシー優先で既定 OFF。
+  history = {
+    enabled = false, -- opt-in。true で記録開始
+    path = nil, -- nil なら stdpath("data").."/annai/history.jsonl"（端末内のみ）
+    max = 500, -- 保持する最大行数。超えたら古いものから破棄
+  },
+  stats_top = 5, -- :Annai stats で表示する上位件数
 
   -- LLM に渡す keymap を選ぶフィルタ。既定は「leader 始まり & desc 付き」。
   -- 英語/記号混じりだとオンデバイスモデルの言語判定が誤作動するため、
@@ -199,6 +209,73 @@ local function pick_backend()
 end
 
 --------------------------------------------------------------------------------
+-- 履歴（端末内 JSONL に追記。よく聞く操作 = まだ指が覚えていないキーを炙り出す）
+--------------------------------------------------------------------------------
+local function history_path()
+  return M.config.history.path or (vim.fn.stdpath("data") .. "/annai/history.jsonl")
+end
+
+local function read_history()
+  local path = history_path()
+  if vim.fn.filereadable(path) ~= 1 then
+    return {}
+  end
+  local entries = {}
+  for _, line in ipairs(vim.fn.readfile(path)) do
+    if line ~= "" then
+      local ok, e = pcall(vim.json.decode, line)
+      if ok and type(e) == "table" then
+        table.insert(entries, e)
+      end
+    end
+  end
+  return entries
+end
+
+-- 1 回の回答を記録する。history.enabled が false なら何もしない（プライバシー優先）。
+local function record(question, answer)
+  if not M.config.history.enabled then
+    return
+  end
+  local path = history_path()
+  vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
+  vim.fn.writefile({ vim.json.encode({ q = question, a = answer, t = os.time() }) }, path, "a")
+  local max = M.config.history.max
+  if max and max > 0 then
+    local lines = vim.fn.readfile(path)
+    if #lines > max then
+      vim.fn.writefile(vim.list_slice(lines, #lines - max + 1, #lines), path)
+    end
+  end
+end
+
+-- 回答ごとの出現回数を数え、多い順に上位 n 件を返す（純粋関数・テスト対象）。
+local function top_answers(entries, n)
+  local count, order = {}, {}
+  for _, e in ipairs(entries) do
+    local a = e.a
+    if a and a ~= "" then
+      if not count[a] then
+        count[a] = 0
+        table.insert(order, a)
+      end
+      count[a] = count[a] + 1
+    end
+  end
+  table.sort(order, function(x, y)
+    if count[x] ~= count[y] then
+      return count[x] > count[y]
+    end
+    return x < y -- 同数は文字列順で安定させる
+  end)
+  local out = {}
+  for i = 1, math.min(n, #order) do
+    table.insert(out, { answer = order[i], count = count[order[i]] })
+  end
+  return out
+end
+
+--------------------------------------------------------------------------------
 -- 公開 API
 --------------------------------------------------------------------------------
 function M.ask()
@@ -214,9 +291,53 @@ function M.ask()
     show("考え中...")
     local prompt = M.config.build_prompt(input, collect_keymaps(), leader_label())
     backend.run(prompt, function(answer, err)
+      if answer then
+        record(input, answer)
+      end
       show(answer or ("エラー: " .. (err or "不明")))
     end)
   end)
+end
+
+-- よく聞く操作（= まだ覚えていないキー）を表示する。
+function M.stats()
+  if not M.config.history.enabled then
+    show("履歴は無効です。\nsetup で history.enabled=true にすると、\nよく聞く操作を記録して表示します。")
+    return
+  end
+  local top = top_answers(read_history(), M.config.stats_top)
+  if #top == 0 then
+    show("まだ履歴がありません。\n:Annai で何度か聞くと、ここに『よく聞く操作』が出ます。")
+    return
+  end
+  local lines = { "よく聞く操作 top" .. #top .. "（指が覚えたら annai 卒業）:" }
+  for _, item in ipairs(top) do
+    table.insert(lines, string.format(" %d回  %s", item.count, item.answer))
+  end
+  show(table.concat(lines, "\n"))
+end
+
+function M.history_clear()
+  local path = history_path()
+  if vim.fn.filereadable(path) == 1 then
+    vim.fn.delete(path)
+  end
+  show("履歴を消去しました。")
+end
+
+-- :Annai のサブコマンド振り分け
+function M.command(args)
+  local sub = args and args[1]
+  if not sub then
+    return M.ask()
+  end
+  if sub == "stats" then
+    return M.stats()
+  end
+  if sub == "history" and args[2] == "clear" then
+    return M.history_clear()
+  end
+  show("使い方:\n :Annai                やりたいことを聞く\n :Annai stats          よく聞く操作\n :Annai history clear  履歴を消去")
 end
 
 function M.setup(opts)
@@ -237,5 +358,11 @@ function M.setup(opts)
     vim.keymap.set("n", M.config.keymap, M.ask, { desc = "やりたいことを LLM に聞く" })
   end
 end
+
+-- テスト用に内部関数を公開する（_ 始まりは内部 API の目印）
+M._read_history = read_history
+M._top_answers = top_answers
+M._record = record
+M._history_path = history_path
 
 return M
