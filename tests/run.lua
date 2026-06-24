@@ -67,4 +67,13 @@ local b1, i1 = annai._pick_backend(1)
 assert(b1 ~= nil and i1 == 1, "ollama available at index 1")
 assert(annai._pick_backend(2) == nil, "no backend beyond the last (escalation stops)")
 
-print("OK: annai history/stats/prompt/escalation tests passed")
+-- build: afm.swift をプラグインルートから解決できる（lazy の build がどの cwd でも動く）
+local build = require("annai.build")
+assert(vim.fn.filereadable(build._plugin_root() .. "/afm/afm.swift") == 1, "build can locate afm.swift")
+-- 非 macOS では afm ビルドを安全にスキップ（install を失敗させない）。
+-- mac では実コンパイルを避けるため、ここでは呼び出さない。
+if vim.fn.has("mac") ~= 1 then
+  assert(build.afm() == false, "afm build is skipped (returns false) on non-macOS")
+end
+
+print("OK: annai history/stats/prompt/escalation/build tests passed")
