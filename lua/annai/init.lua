@@ -39,6 +39,9 @@ M.config = {
   },
   stats_top = 5, -- :Annai stats で表示する上位件数
 
+  -- 回答が違ったとき「回答窓が出たまま もう一度 ? で次のバックエンドに聞き直す」導線のヒント文。
+  more_hint = "— 違う？ もう一度 ? でじっくり聞く",
+
   -- LLM に渡す keymap を選ぶフィルタ。既定は「leader 始まり & desc 付き」。
   -- 英語/記号混じりだとオンデバイスモデルの言語判定が誤作動するため、
   -- 説明付きの自作キーだけに絞ると精度が安定する。
@@ -205,11 +208,13 @@ backends.ollama = {
   end,
 }
 
-local function pick_backend()
-  for _, name in ipairs(M.config.backends) do
-    local b = backends[name]
+-- from_idx 以降で最初に「使える」バックエンドを返す（backend, idx）。
+-- escalation はこの idx を 1 つずつ進めて次の（より慎重な）バックエンドへ回す。
+local function pick_backend(from_idx)
+  for i = from_idx or 1, #M.config.backends do
+    local b = backends[M.config.backends[i]]
     if b and b.available() then
-      return b
+      return b, i
     end
   end
   return nil
@@ -240,13 +245,23 @@ local function read_history()
 end
 
 -- 1 回の回答を記録する。history.enabled が false なら何もしない（プライバシー優先）。
-local function record(question, answer)
+-- replace_last=true なら直前の行を上書きする（エスカレーションで同じ質問の最終回答だけ残す）。
+local function record(question, answer, replace_last)
   if not M.config.history.enabled then
     return
   end
   local path = history_path()
   vim.fn.mkdir(vim.fn.fnamemodify(path, ":h"), "p")
-  vim.fn.writefile({ vim.json.encode({ q = question, a = answer, t = os.time() }) }, path, "a")
+  local line = vim.json.encode({ q = question, a = answer, t = os.time() })
+  if replace_last and vim.fn.filereadable(path) == 1 then
+    local lines = vim.fn.readfile(path)
+    if #lines > 0 then
+      lines[#lines] = line
+      vim.fn.writefile(lines, path)
+      return
+    end
+  end
+  vim.fn.writefile({ line }, path, "a")
   local max = M.config.history.max
   if max and max > 0 then
     local lines = vim.fn.readfile(path)
@@ -285,24 +300,47 @@ end
 --------------------------------------------------------------------------------
 -- 公開 API
 --------------------------------------------------------------------------------
+-- 1 つのバックエンドで質問を処理して結果を表示する。
+-- escalation=true は「回答窓が出たまま再度 ? を押した」追い打ちで、次のバックエンドへ回す。
+local function deliver(question, from_idx, escalation)
+  local backend, idx = pick_backend(from_idx)
+  if not backend then
+    M._session = nil
+    show(
+      escalation and "これ以上詳しく聞けるバックエンドがありません。"
+        or "利用可能なバックエンドがありません。\nafm をビルドするか Ollama を起動してください。"
+    )
+    return
+  end
+  M._session = { question = question, used_idx = idx }
+  show(escalation and "詳しく聞いています..." or "考え中...")
+  backend.run(M.config.build_prompt(question, collect_keymaps(), leader_label()), function(answer, err)
+    if not answer then
+      show("エラー: " .. (err or "不明"))
+      return
+    end
+    -- エスカレーション時は直前の記録を上書きし、同じ質問の最終回答だけ残す
+    record(question, answer, escalation)
+    -- まだ次のバックエンドが残っていれば「もう一度 ? で詳しく」を案内する
+    if pick_backend(idx + 1) then
+      show(answer .. "\n" .. M.config.more_hint)
+    else
+      M._session = nil -- これ以上詳しく聞ける先が無い → 次の ? は新しい質問
+      show(answer)
+    end
+  end)
+end
+
 function M.ask()
+  -- 回答窓が開いている間に再度押された = 「今の答えが違う、もっと詳しく」のサイン。
+  -- 直前の質問を打ち直さず、次の（より慎重な）バックエンドへ回す。
+  if state.win and vim.api.nvim_win_is_valid(state.win) and M._session then
+    return deliver(M._session.question, M._session.used_idx + 1, true)
+  end
   vim.ui.input({ prompt = M.config.input_prompt }, function(input)
-    if not input or input == "" then
-      return
+    if input and input ~= "" then
+      deliver(input, 1, false)
     end
-    local backend = pick_backend()
-    if not backend then
-      show("利用可能なバックエンドがありません。\nafm をビルドするか Ollama を起動してください。")
-      return
-    end
-    show("考え中...")
-    local prompt = M.config.build_prompt(input, collect_keymaps(), leader_label())
-    backend.run(prompt, function(answer, err)
-      if answer then
-        record(input, answer)
-      end
-      show(answer or ("エラー: " .. (err or "不明")))
-    end)
   end)
 end
 
@@ -371,5 +409,6 @@ M._read_history = read_history
 M._top_answers = top_answers
 M._record = record
 M._history_path = history_path
+M._pick_backend = pick_backend
 
 return M

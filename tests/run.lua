@@ -52,4 +52,19 @@ assert(has(p, "回答: この設定には無い"), "prompt must include a no-mat
 assert(has(p, "Space ff = ファイル名で検索"), "prompt must embed the keymap list")
 assert(has(p, "置換したい"), "prompt must embed the question")
 
-print("OK: annai history/stats/prompt tests passed")
+-- エスカレーション: replace_last は直前の行を上書き（同じ質問の最終回答だけ残す＝二重カウント防止）
+local tmp2 = vim.fn.tempname() .. "/history.jsonl"
+annai.setup({ history = { enabled = true, path = tmp2 }, keymap = false })
+annai._record("置換したい", "Space e — ファイルツリー開閉") -- afm の誤答
+annai._record("置換したい", "この設定には無い", true) -- Ollama で聞き直して上書き
+local esc = annai._read_history()
+assert_eq(#esc, 1, "escalation replaces the last record")
+assert_eq(esc[1].a, "この設定には無い", "final answer is kept after escalation")
+
+-- pick_backend は from_idx 以降の最初の利用可能を返す（escalation の停止条件）
+annai.setup({ backends = { "ollama" }, keymap = false }) -- curl は CI にもある = ollama 利用可
+local b1, i1 = annai._pick_backend(1)
+assert(b1 ~= nil and i1 == 1, "ollama available at index 1")
+assert(annai._pick_backend(2) == nil, "no backend beyond the last (escalation stops)")
+
+print("OK: annai history/stats/prompt/escalation tests passed")
