@@ -41,6 +41,17 @@ assert_eq(#annai._read_history(), 0, "history empty after clear")
 -- 空履歴のとき top は空配列
 assert_eq(#annai._top_answers({}, 5), 0, "empty history => empty top")
 
+-- 既定プロンプト: no-match ガイドと few-shot 例（正例 + 反例）が入っていること
+local function has(s, sub)
+  return s:find(sub, 1, true) ~= nil
+end
+local p = annai.config.build_prompt("置換したい", "Space ff = ファイル名で検索", "Space")
+assert(has(p, "この設定には無い"), "prompt must instruct the no-match fallback")
+assert(has(p, "# 例"), "prompt must include few-shot examples")
+assert(has(p, "回答: この設定には無い"), "prompt must include a no-match example")
+assert(has(p, "Space ff = ファイル名で検索"), "prompt must embed the keymap list")
+assert(has(p, "置換したい"), "prompt must embed the question")
+
 -- エスカレーション: replace_last は直前の行を上書き（同じ質問の最終回答だけ残す＝二重カウント防止）
 local tmp2 = vim.fn.tempname() .. "/history.jsonl"
 annai.setup({ history = { enabled = true, path = tmp2 }, keymap = false })
@@ -56,4 +67,4 @@ local b1, i1 = annai._pick_backend(1)
 assert(b1 ~= nil and i1 == 1, "ollama available at index 1")
 assert(annai._pick_backend(2) == nil, "no backend beyond the last (escalation stops)")
 
-print("OK: annai history/stats/escalation tests passed")
+print("OK: annai history/stats/prompt/escalation tests passed")
