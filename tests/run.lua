@@ -81,4 +81,9 @@ annai.setup({ keymap = "<leader>?", leader_display = "Space" })
 assert_eq(annai._trigger_label(), "Space ?", "hint shows the resolved trigger key")
 assert_eq(annai.config.more_hint:format(annai._trigger_label()), "— 違う？ もう一度 Space ? でじっくり聞く", "hint renders the key")
 
-print("OK: annai history/stats/prompt/escalation/build/hint tests passed")
+-- 表示ラベル: afm はそのまま、ollama はモデル名付き（どのモデルに聞いたか可視化）
+annai.setup({ ollama = { model = "qwen2.5:3b" }, keymap = false })
+assert_eq(annai._backend_label("afm"), "afm", "afm label")
+assert_eq(annai._backend_label("ollama"), "Ollama: qwen2.5:3b", "ollama label includes the model")
+
+print("OK: annai history/stats/prompt/escalation/build/hint/label tests passed")
