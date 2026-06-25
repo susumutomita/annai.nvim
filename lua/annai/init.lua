@@ -100,11 +100,16 @@ local function close()
   state.win = nil
 end
 
-local function show(text)
+local function show(text, tag)
   close()
   local w = M.config.window
+  -- tag があればタイトルに「· <バックエンド>」を添える（どのモデルに聞いたかが残る）
+  local title = w.title
+  if tag and tag ~= "" then
+    title = (w.title:gsub("%s*$", "")) .. " · " .. tag .. " "
+  end
   local lines = vim.split(text, "\n", { trimempty = false })
-  local width = 24
+  local width = math.max(24, vim.fn.strdisplaywidth(title))
   for _, l in ipairs(lines) do
     width = math.max(width, vim.fn.strdisplaywidth(l))
   end
@@ -122,7 +127,7 @@ local function show(text)
     style = "minimal",
     border = w.border,
     focusable = false, -- フォーカスを奪わない
-    title = w.title,
+    title = title,
     title_pos = "center",
     noautocmd = true,
   })
@@ -231,6 +236,15 @@ local function pick_backend(from_idx)
   return nil
 end
 
+-- 「考え中」表示や回答タイトルに出す、いま使っているバックエンドの表示名。
+-- ollama はモデル名まで出す（フォールバック/エスカレーションを確認できる）。
+local function backend_label(name)
+  if name == "ollama" then
+    return "Ollama: " .. M.config.ollama.model
+  end
+  return name -- "afm" など
+end
+
 --------------------------------------------------------------------------------
 -- 履歴（端末内 JSONL に追記。よく聞く操作 = まだ指が覚えていないキーを炙り出す）
 --------------------------------------------------------------------------------
@@ -324,20 +338,22 @@ local function deliver(question, from_idx, escalation)
     return
   end
   M._session = { question = question, used_idx = idx }
-  show(escalation and "詳しく聞いています..." or "考え中...")
+  local label = backend_label(M.config.backends[idx])
+  -- 「考え中」本文にもバックエンド名を出す（どのモデルに聞いているか即わかる）
+  show((escalation and "詳しく聞いています" or "考え中") .. "…（" .. label .. "）", label)
   backend.run(M.config.build_prompt(question, collect_keymaps(), leader_label()), function(answer, err)
     if not answer then
-      show("エラー: " .. (err or "不明"))
+      show("エラー: " .. (err or "不明"), label)
       return
     end
     -- エスカレーション時は直前の記録を上書きし、同じ質問の最終回答だけ残す
     record(question, answer, escalation)
     -- まだ次のバックエンドが残っていれば「もう一度 ? で詳しく」を案内する
     if pick_backend(idx + 1) then
-      show(answer .. "\n" .. M.config.more_hint:format(trigger_label()))
+      show(answer .. "\n" .. M.config.more_hint:format(trigger_label()), label)
     else
       M._session = nil -- これ以上詳しく聞ける先が無い → 次の ? は新しい質問
-      show(answer)
+      show(answer, label)
     end
   end)
 end
@@ -422,5 +438,6 @@ M._record = record
 M._history_path = history_path
 M._pick_backend = pick_backend
 M._trigger_label = trigger_label
+M._backend_label = backend_label
 
 return M
