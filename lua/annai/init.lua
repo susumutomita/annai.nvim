@@ -39,8 +39,9 @@ M.config = {
   },
   stats_top = 5, -- :Annai stats で表示する上位件数
 
-  -- 回答が違ったとき「回答窓が出たまま もう一度 ? で次のバックエンドに聞き直す」導線のヒント文。
-  more_hint = "— 違う？ もう一度 ? でじっくり聞く",
+  -- 回答が違ったとき「回答窓が出たまま もう一度 起動キーで次のバックエンドに聞き直す」導線のヒント。
+  -- %s には実際の起動キー（<leader>? → "Space ?"、keymap=false なら ":Annai"）が入る。
+  more_hint = "— 違う？ もう一度 %s でじっくり聞く",
 
   -- LLM に渡す keymap を選ぶフィルタ。既定は「leader 始まり & desc 付き」。
   -- 英語/記号混じりだとオンデバイスモデルの言語判定が誤作動するため、
@@ -142,6 +143,16 @@ local function leader_label()
   end
   local leader = vim.g.mapleader or "\\"
   return leader == " " and "Space" or leader
+end
+
+-- escalation のヒントに出す「再度押す起動キー」の表示。
+-- 例: "<leader>?" → "Space ?"。keymap が無効なら確実に動く ":Annai" を案内する。
+local function trigger_label()
+  local km = M.config.keymap
+  if type(km) ~= "string" or km == "" then
+    return ":Annai"
+  end
+  return (km:gsub("<[lL]eader>", leader_label() .. " "))
 end
 
 local function collect_keymaps()
@@ -323,7 +334,7 @@ local function deliver(question, from_idx, escalation)
     record(question, answer, escalation)
     -- まだ次のバックエンドが残っていれば「もう一度 ? で詳しく」を案内する
     if pick_backend(idx + 1) then
-      show(answer .. "\n" .. M.config.more_hint)
+      show(answer .. "\n" .. M.config.more_hint:format(trigger_label()))
     else
       M._session = nil -- これ以上詳しく聞ける先が無い → 次の ? は新しい質問
       show(answer)
@@ -410,5 +421,6 @@ M._top_answers = top_answers
 M._record = record
 M._history_path = history_path
 M._pick_backend = pick_backend
+M._trigger_label = trigger_label
 
 return M

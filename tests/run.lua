@@ -67,4 +67,9 @@ local b1, i1 = annai._pick_backend(1)
 assert(b1 ~= nil and i1 == 1, "ollama available at index 1")
 assert(annai._pick_backend(2) == nil, "no backend beyond the last (escalation stops)")
 
+-- escalation のヒントは実際の起動キーを表示する（<leader>? → "Space ?"、bare ? ではない）
+annai.setup({ keymap = "<leader>?", leader_display = "Space" })
+assert_eq(annai._trigger_label(), "Space ?", "hint shows the resolved trigger key")
+assert_eq(annai.config.more_hint:format(annai._trigger_label()), "— 違う？ もう一度 Space ? でじっくり聞く", "hint renders the key")
+
 print("OK: annai history/stats/prompt/escalation tests passed")
