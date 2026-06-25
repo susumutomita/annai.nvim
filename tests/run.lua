@@ -76,4 +76,9 @@ if vim.fn.has("mac") ~= 1 then
   assert(build.afm() == false, "afm build is skipped (returns false) on non-macOS")
 end
 
-print("OK: annai history/stats/prompt/escalation/build tests passed")
+-- escalation のヒントは実際の起動キーを表示する（<leader>? → "Space ?"、bare ? ではない）
+annai.setup({ keymap = "<leader>?", leader_display = "Space" })
+assert_eq(annai._trigger_label(), "Space ?", "hint shows the resolved trigger key")
+assert_eq(annai.config.more_hint:format(annai._trigger_label()), "— 違う？ もう一度 Space ? でじっくり聞く", "hint renders the key")
+
+print("OK: annai history/stats/prompt/escalation/build/hint tests passed")
