@@ -332,7 +332,7 @@ local function deliver(question, from_idx, escalation)
   if not backend then
     M._session = nil
     show(
-      escalation and "これ以上詳しく聞けるバックエンドがありません。"
+      escalation and "これ以上詳しく聞けるバックエンドがありません。\n（もう一度押すと新しい質問になります）"
         or "利用可能なバックエンドがありません。\nafm をビルドするか Ollama を起動してください。"
     )
     return
@@ -352,7 +352,8 @@ local function deliver(question, from_idx, escalation)
     if pick_backend(idx + 1) then
       show(answer .. "\n" .. M.config.more_hint:format(trigger_label()), label)
     else
-      M._session = nil -- これ以上詳しく聞ける先が無い → 次の ? は新しい質問
+      -- 次のバックエンドが無いのでヒント無し。session は保持し、
+      -- 再押下では「これ以上ありません」を明示する（黙って新しい質問にして回答を流さない）。
       show(answer, label)
     end
   end)
