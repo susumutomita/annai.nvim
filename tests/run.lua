@@ -67,9 +67,18 @@ local b1, i1 = annai._pick_backend(1)
 assert(b1 ~= nil and i1 == 1, "ollama available at index 1")
 assert(annai._pick_backend(2) == nil, "no backend beyond the last (escalation stops)")
 
+-- build: afm.swift をプラグインルートから解決できる（lazy の build がどの cwd でも動く）
+local build = require("annai.build")
+assert(vim.fn.filereadable(build._plugin_root() .. "/afm/afm.swift") == 1, "build can locate afm.swift")
+-- 非 macOS では afm ビルドを安全にスキップ（install を失敗させない）。
+-- mac では実コンパイルを避けるため、ここでは呼び出さない。
+if vim.fn.has("mac") ~= 1 then
+  assert(build.afm() == false, "afm build is skipped (returns false) on non-macOS")
+end
+
 -- escalation のヒントは実際の起動キーを表示する（<leader>? → "Space ?"、bare ? ではない）
 annai.setup({ keymap = "<leader>?", leader_display = "Space" })
 assert_eq(annai._trigger_label(), "Space ?", "hint shows the resolved trigger key")
 assert_eq(annai.config.more_hint:format(annai._trigger_label()), "— 違う？ もう一度 Space ? でじっくり聞く", "hint renders the key")
 
-print("OK: annai history/stats/prompt/escalation tests passed")
+print("OK: annai history/stats/prompt/escalation/build/hint tests passed")

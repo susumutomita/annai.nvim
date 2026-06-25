@@ -31,30 +31,25 @@ no telemetry.*
 | `afm`（推奨・最速） | macOS 26+ / Apple Silicon / Apple Intelligence 有効 | 同梱の `afm/afm.swift` をビルド |
 | `ollama`（フォールバック） | [Ollama](https://ollama.com) + 任意のモデル | 例: `ollama pull qwen2.5:3b` |
 
-## インストール
+## インストール（[lazy.nvim](https://github.com/folke/lazy.nvim)）
 
-### 1. （任意・推奨）afm をビルド
-
-```sh
-swiftc -O afm/afm.swift -o ~/.local/bin/afm
-# 確認:  echo "ping と一言で返して" | afm
-```
-
-afm が無い場合は Ollama だけでも動きます（`ollama serve` を起動しておく）。
-
-### 2. プラグインを追加（[lazy.nvim](https://github.com/folke/lazy.nvim)）
+この spec を足して nvim を再起動するだけ。lazy が clone し、**macOS では `build` が afm も自動コンパイル**します。
 
 ```lua
 {
   "susumutomita/annai.nvim",
+  build = function() require("annai.build").afm() end, -- macOS で afm を自動ビルド（他OSは安全にスキップ）
   event = "VeryLazy",
   opts = {
-    -- すべて任意。既定のままでも動く。
-    ollama = { model = "qwen2.5:3b" }, -- フォールバック時に使うモデル
+    ollama = { model = "qwen2.5:3b" }, -- afm 不在/フォールバック時に使うモデル
     keymap = "<leader>?",              -- 起動キー（false で無効化）
   },
 }
 ```
+
+- **afm（Apple・最速）が動く条件**: macOS 26+ / Apple Silicon / Apple Intelligence 有効 / Xcode Command Line Tools（`swiftc`）。`build` が `~/.local/bin/afm` にコンパイルするので、**`~/.local/bin` を PATH に通しておいてください**。
+- **afm が無い環境**（Linux/Windows、または Apple Intelligence 無効）: `build` は黙ってスキップし、**Ollama だけで動きます**（`ollama serve` ＋ `ollama pull qwen2.5:3b`）。
+- 手動でビルドしたい場合: clone 先で `swiftc -O afm/afm.swift -o ~/.local/bin/afm`。
 
 ## 使い方
 
